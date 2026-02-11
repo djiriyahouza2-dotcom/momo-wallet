@@ -11,9 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('country')->default('COD');
-            $table->string('currency')->default('CDF');
+        Schema::table('transactions', function (Blueprint $table) {
+            $table->enum('type', ['deposit', 'withdraw'])->default('deposit')->after('amount');
         });
     }
 
@@ -22,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            //
+        Schema::table('transactions', function (Blueprint $table) {
+            $table->dropColumn('type');
         });
     }
 };

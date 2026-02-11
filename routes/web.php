@@ -13,6 +13,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [TransactionsController::class, 'getDepositForm'])->name('transactions.deposit');
         Route::post('/', [TransactionsController::class, 'initDeposit'])->name('transactions.deposit');
         Route::get('/{id}/status', [TransactionsController::class, 'getTransactionStatus'])->name('transactions.status');
+
+        Route::get('/withdraw', [TransactionsController::class, 'getWithdrawForm'])->name('transactions.withdraw');
+        Route::post('/withdraw', [TransactionsController::class, 'initWithdraw'])->name('transactions.withdraw');
     });
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

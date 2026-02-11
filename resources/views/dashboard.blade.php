@@ -17,7 +17,19 @@
                             class="inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
                             Dépôt
                         </a>
+                        @if ($user->balance > 10)
+                            <a href="{{ route('transactions.withdraw') }}"
+                                class="inline-block px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition">
+                                Rétrait
+                            </a>
+                        @endif
                     </div>
+
+                    @if (session('error'))
+                        <div class="bg-red-300 p-2 m-2">
+                            <span class="text-red-800">{{ session('error') }}</span>
+                        </div>
+                    @endif
                 </div>
             </div>
 
@@ -54,7 +66,10 @@
                                                 <span
                                                     class="text-sm text-white font-bold rounded-full px-4 py-1 {{ $transaction->status == 'completed' ? 'bg-green-600' : ($transaction->status == 'failed' ? 'bg-red-500' : 'bg-yellow-500') }}">{{ ucfirst($transaction->status) }}</span>
                                             </td>
-                                            <td class="px-4 py-2 whitespace-nowrap">{{ $transaction->note ?? '-' }}</td>
+                                            <td
+                                                class="px-4 py-2 whitespace-nowrap {{ $transaction->type == 'deposit' ? 'text-blue-500' : 'text-red-500' }}">
+                                                {{ $transaction->type == 'deposit' ? 'Dépôt' : 'Retrait' }}
+                                            </td>
                                         </tr>
                                     @endforeach
                                 </tbody>

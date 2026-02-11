@@ -13,6 +13,7 @@ class Transaction extends Model
     protected $fillable = [
         'id',
         'amount',
+        'type', // deposit, withdraw
         'user_id',
         'status', // 'pending', 'completed', 'failed'
         'note',

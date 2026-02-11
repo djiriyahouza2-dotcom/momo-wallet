@@ -18,8 +18,32 @@ class TransactionsController extends Controller
         $user = User::find(Auth::id());
         $providers_data = $this->getProvidersAvailable($user->country);
 
+        if (empty($providers_data) || empty($providers_data['countries'][0]['providers'])) {
+            return redirect()->back()->with('error', "Aucun fournisseur de paiement disponible pour votre pays.");
+        }
+
         return view('transactions.deposit-form', [
             'payment_config' => $providers_data['countries'][0]
+        ]);
+    }
+
+    public function getWithdrawForm()
+    {
+        $user = User::find(Auth::id());
+
+        if ($user->balance < 10) {
+            return redirect()->back()->with('error', 'Votre solde est insuffisant pour effectuer un retrait. Le montant minimum de retrait est de 1000');
+        }
+
+        $providers_data = $this->getProvidersAvailable($user->country, 'PAYOUT');
+
+        if (empty($providers_data) || empty($providers_data['countries'][0]['providers'])) {
+            return redirect()->back()->with('error', "Aucun fournisseur de transfert d'argent disponible pour votre pays.");
+        }
+
+        return view('transactions.withdraw-form', [
+            'payment_config' => $providers_data['countries'][0],
+            'balance' => $user->balance
         ]);
     }
 
@@ -85,20 +109,88 @@ class TransactionsController extends Controller
         }
     }
 
+    public function initWithdraw(Request $request)
+    {
+        $request->validate([
+            'amount' => 'required|min:2',
+            'phone' => 'required|min:9',
+            'provider' => 'required'
+        ]);
+
+        $transaction = Transaction::create([
+            'type' => 'withdraw',
+            'user_id' => Auth::id(),
+            'amount' => $request->amount,
+            'status' => 'pending'
+        ]);
+
+        if (!$transaction) {
+            return redirect()->back()->with('error', "une erreur s'est produite, veuillez ressayez !");
+        }
+
+        try {
+            $phone =  preg_replace('/\D/', '', '243' . $request->phone);
+            $endpoint = config('services.pawapay.api_url') . '/payouts';
+
+            $payload = [
+                "payoutId" => $transaction->id,
+                "amount" => $transaction->amount,
+                "currency" => Auth::user()->currency,
+                "recipient" => [
+                    "type" => "MMO",
+                    "accountDetails" => [
+                        "phoneNumber" => $phone,
+                        "provider" => $request->provider
+                    ]
+                ],
+            ];
+
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . config('services.pawapay.api_key'),
+                'Content-Tyoe' => 'application/json'
+            ])
+                ->post($endpoint, $payload);
+
+            if ($response->successful()) {
+                $data = $response->json();
+
+                if (isset($data['status']) && $data['status'] === 'ACCEPTED') {
+                    return redirect()->route('transactions.status', $transaction->id);
+                } else {
+                    $transaction->status = 'failed';
+                    $transaction->note = $data['failureReason']['failureMessage'];
+                    $transaction->save();
+                    return redirect()->route('transactions.status', $transaction->id);
+                }
+            } else {
+                // 
+                return redirect()->back()->with('error', "une erreur s'est produite, veuillez ressayez !");
+            }
+        } catch (\Throwable $th) {
+            //throw $th;
+            return redirect()->back()->with('error', "une erreur s'est produite, veuillez ressayez !");
+        }
+    }
+
     public function getTransactionStatus($transaction_id)
     {
         $transaction = Transaction::findOrFail($transaction_id);
         $user = User::find(Auth::id());
 
-        $data = $this->verifyTransactionStatus($transaction_id);
+        $data = $this->verifyTransactionStatus($transaction_id, $transaction->type);
 
         if (!$data) {
-            return view('transactions.deposit-status', compact('transaction'));
+            return view('transactions.status', compact('transaction'));
         }
 
         if ($data['status'] === 'COMPLETED') {
             $transaction->status = 'completed';
-            $user->updateBalance($transaction->amount);
+
+            if ($transaction->type === 'deposit') {
+                $user->updateBalance($transaction->amount);
+            } elseif ($transaction->type === 'withdraw') {
+                $user->updateBalance(-1 * $transaction->amount);
+            }
         } elseif ($data['status'] === 'FAILED') {
             $transaction->status = 'failed';
             $transaction->note = $data['failureReason']['failureMessage'];
@@ -109,10 +201,10 @@ class TransactionsController extends Controller
         $transaction->save();
         $transaction->refresh();
 
-        return view('transactions.deposit-status', compact('transaction'));
+        return view('transactions.status', compact('transaction'));
     }
 
-    protected function getProvidersAvailable($country)
+    protected function getProvidersAvailable($country, $type = 'DEPOSIT')
     {
         try {
 
@@ -124,7 +216,7 @@ class TransactionsController extends Controller
             ])
                 ->withQueryParameters([
                     'country' => $country,
-                    'operationType' => 'DEPOSIT'
+                    'operationType' => $type
                 ])
                 ->get($endpoint);
 
@@ -141,10 +233,14 @@ class TransactionsController extends Controller
         }
     }
 
-    protected function verifyTransactionStatus($transaction_id)
+    protected function verifyTransactionStatus($transaction_id, $type = 'deposit')
     {
         try {
-            $endpoint = config('services.pawapay.api_url') . '/deposits/' . $transaction_id;
+            if ($type === 'withdraw') {
+                $endpoint = config('services.pawapay.api_url') . '/payouts/' . $transaction_id;
+            } else {
+                $endpoint = config('services.pawapay.api_url') . '/deposits/' . $transaction_id;
+            }
 
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . config('services.pawapay.api_key'),
